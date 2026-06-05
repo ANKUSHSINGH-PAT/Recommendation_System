@@ -1,0 +1,87 @@
+name: Build and Deploy to EKS
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: recommendation-system
+  EKS_CLUSTER_NAME: recommendation-cluster
+
+jobs:
+  build-and-deploy:
+    name: Build and Deploy
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+
+    - name: Build, tag, and push image to Amazon ECR
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+        docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+        echo "IMAGE=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_ENV
+
+    - name: Update kubeconfig
+      run: |
+        aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.EKS_CLUSTER_NAME }}
+
+    - name: Create Kubernetes secrets
+      run: |
+        kubectl create secret generic llmops-secrets \
+          --from-literal=GROQ_API_KEY="${{ secrets.GROQ_API_KEY }}" \
+          --from-literal=ASTRA_DB_TOKEN="${{ secrets.ASTRA_DB_TOKEN }}" \
+          --from-literal=ASTRA_DB_ENDPOINT="${{ secrets.ASTRA_DB_ENDPOINT }}" \
+          --from-literal=HUGGINGFACE_TOKEN="${{ secrets.HUGGINGFACE_TOKEN }}" \
+          --dry-run=client -o yaml | kubectl apply -f -
+
+    - name: Update deployment image
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        # Update deployment YAML with new image
+        sed -i "s|image:.*|image: $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG|g" k8s/flask-deployment.yaml
+        
+    - name: Deploy to EKS
+      run: |
+        kubectl apply -f k8s/flask-deployment.yaml
+        kubectl apply -f k8s/hpa.yaml
+        
+    - name: Wait for deployment
+      run: |
+        kubectl rollout status deployment/flask-app --timeout=5m
+        
+    - name: Get service URL
+      run: |
+        echo "Application URL:"
+        kubectl get service flask-service -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
+        echo ""
+
+    - name: Verify deployment
+      run: |
+        kubectl get pods -l app=flask
+        kubectl get service flask-service
+        kubectl get hpa flask-app-hpa
+
+# Made with Bob

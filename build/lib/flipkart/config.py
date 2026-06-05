@@ -10,4 +10,4 @@ class Config:
     HF_TOKEN = os.getenv("HF_TOKEN")
     HUGGINGFACE_HUB_TOKEN = os.getenv("HUGGINGFACE_HUB_TOKEN")
     EMBEDDING_MODEL = "BAAI/bge-base-en-v1.5"
-    RAG_MODEL ="openai/gpt-oss-120b"
+    RAG_MODEL =""

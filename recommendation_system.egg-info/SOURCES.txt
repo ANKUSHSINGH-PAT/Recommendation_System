@@ -1,0 +1,16 @@
+README.md
+pyproject.toml
+setup.py
+flipkart/__init__.py
+flipkart/config.py
+flipkart/data_converter.py
+flipkart/data_ingestion.py
+flipkart/rag_chain.py
+recommendation_system.egg-info/PKG-INFO
+recommendation_system.egg-info/SOURCES.txt
+recommendation_system.egg-info/dependency_links.txt
+recommendation_system.egg-info/requires.txt
+recommendation_system.egg-info/top_level.txt
+utils/__init__.py
+utils/custom_exception.py
+utils/logger.py
